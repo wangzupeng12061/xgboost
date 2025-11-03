@@ -1,0 +1,165 @@
+# XGBoost多因子选股系统配置文件
+
+# ==================== 数据配置 ====================
+data:
+  source: "tushare"  # 数据源: tushare, akshare, local
+  token: "YOUR_TUSHARE_TOKEN_HERE"  # 请替换为你的Tushare token
+  start_date: "2018-01-01"
+  end_date: "2024-12-31"
+  universe: "all"  # 股票池: all, hs300, zz500, zz1000
+  
+  # 数据清洗配置
+  cleaning:
+    drop_st: true  # 剔除ST股票
+    drop_suspended: true  # 剔除停牌股票
+    min_liquidity: 1000000  # 最小日成交额（元）
+    min_price: 1.0  # 最小股价
+    max_price: 1000.0  # 最大股价
+
+# ==================== 因子配置 ====================
+factors:
+  config_file: "config/factor_config.json"
+  
+  # 因子预处理
+  preprocessing:
+    winsorize_method: "mad"  # 去极值方法: mad, std, quantile
+    winsorize_params:
+      n_std: 3
+      quantile: [0.01, 0.99]
+    
+    standardize_method: "zscore"  # 标准化方法: zscore, minmax, rank
+    
+    neutralize: true  # 是否进行中性化
+    neutralize_factors:
+      - "industry"  # 行业中性化
+      - "market_cap"  # 市值中性化
+    
+    fill_method: "industry_median"  # 缺失值填充: industry_median, forward_fill, zero, mean
+  
+  # 因子筛选
+  selection:
+    use_selection: true
+    ic_threshold: 0.02  # IC绝对值阈值
+    icir_threshold: 0.3  # ICIR阈值
+    correlation_threshold: 0.7  # 相关性阈值
+
+# ==================== 标签配置 ====================
+label:
+  forward_days: 20  # 前瞻天数
+  type: "classification"  # 标签类型: classification, regression
+  
+  # 分类标签配置
+  classification:
+    method: "binary"  # binary, quantile
+    threshold: 0.0  # 二分类阈值
+    quantiles: [0.3, 0.7]  # 分层分位数
+  
+  # 回归标签配置
+  regression:
+    use_excess_return: false  # 是否使用超额收益
+    benchmark: "000300.SH"  # 基准指数
+
+# ==================== 模型配置 ====================
+model:
+  task_type: "classification"  # classification, regression
+  
+  # XGBoost参数
+  params:
+    max_depth: 5
+    learning_rate: 0.1
+    n_estimators: 100
+    min_child_weight: 3
+    subsample: 0.8
+    colsample_bytree: 0.8
+    gamma: 0.1
+    reg_alpha: 0
+    reg_lambda: 1
+    random_state: 42
+    n_jobs: -1
+  
+  # 训练配置
+  training:
+    use_validation: true
+    validation_split: 0.2
+    early_stopping_rounds: 10
+    verbose: true
+  
+  # 超参数优化
+  tuning:
+    use_tuning: false
+    method: "grid_search"  # grid_search, random_search
+    cv_splits: 5
+
+# ==================== 选股策略配置 ====================
+strategy:
+  n_stocks: 50  # 持仓股票数量
+  method: "top_n"  # 选股方法: top_n, threshold, portfolio
+  
+  # 阈值选股配置
+  threshold:
+    score_threshold: 0.6
+  
+  # 组合优化配置
+  portfolio:
+    max_industry_weight: 0.3  # 单行业最大权重
+    weight_method: "equal"  # 权重方法: equal, score_weighted
+  
+  # 调仓配置
+  rebalance:
+    frequency: "20D"  # 调仓频率: 1D, 5D, 20D, 60D
+    max_turnover: 1.0  # 最大换手率
+
+# ==================== 回测配置 ====================
+backtest:
+  # 回测周期
+  train_start_date: "2018-01-01"
+  train_end_date: "2019-12-31"
+  test_start_date: "2020-01-01"
+  test_end_date: "2024-12-31"
+  
+  # 滚动训练配置
+  rolling_train:
+    use_rolling: true
+    train_period: 252  # 训练窗口（交易日）
+    retrain_frequency: 60  # 重新训练频率（交易日）
+  
+  # 资金配置
+  initial_capital: 1000000
+  
+  # 交易成本
+  commission_rate: 0.0003  # 佣金费率
+  min_commission: 5  # 最低佣金
+  slippage: 0.001  # 滑点
+  
+  # 基准配置
+  benchmark: "000300.SH"  # 沪深300
+  risk_free_rate: 0.03  # 无风险利率（年化）
+
+# ==================== 输出配置 ====================
+output:
+  # 输出路径
+  model_path: "results/models/"
+  report_path: "results/reports/"
+  figure_path: "results/figures/"
+  log_path: "logs/"
+  
+  # 输出选项
+  save_predictions: true
+  save_factor_importance: true
+  save_ic_analysis: true
+  generate_plots: true
+  
+  # 报告配置
+  report:
+    format: "html"  # html, pdf, both
+    include_sections:
+      - "summary"
+      - "performance"
+      - "factor_analysis"
+      - "trade_analysis"
+
+# ==================== 日志配置 ====================
+logging:
+  level: "INFO"  # DEBUG, INFO, WARNING, ERROR
+  format: "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+  save_to_file: true
