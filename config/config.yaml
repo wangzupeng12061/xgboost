@@ -3,16 +3,16 @@
 # ==================== 数据配置 ====================
 data:
   source: "tushare"  # 数据源: tushare, akshare, local
-  token: "YOUR_TUSHARE_TOKEN_HERE"  # 请替换为你的Tushare token
-  start_date: "2018-01-01"
-  end_date: "2024-12-31"
-  universe: "all"  # 股票池: all, hs300, zz500, zz1000
+  token: "5bad37d885b8e5bbb4a0bcd546cf67c985f6f3df19095c6be5a67e0e"
+  start_date: "2024-01-01"  # 使用2024年数据，确保快速测试
+  end_date: "2024-10-31"
+  universe: "test"  # 股票池: all, hs300, zz500, test
   
   # 数据清洗配置
   cleaning:
     drop_st: true  # 剔除ST股票
     drop_suspended: true  # 剔除停牌股票
-    min_liquidity: 1000000  # 最小日成交额（元）
+    min_liquidity: 100000  # 最小日成交额（元），降低阈值保留更多数据
     min_price: 1.0  # 最小股价
     max_price: 1000.0  # 最大股价
 
@@ -39,9 +39,11 @@ factors:
   # 因子筛选
   selection:
     use_selection: true
-    ic_threshold: 0.02  # IC绝对值阈值
-    icir_threshold: 0.3  # ICIR阈值
-    correlation_threshold: 0.7  # 相关性阈值
+    ic_threshold: 0.01  # IC绝对值阈值（降低以保留更多因子）
+    icir_threshold: 0.1  # ICIR阈值（降低以保留更多因子）
+    correlation_threshold: 0.8  # 相关性阈值（提高以保留更多独立因子）
+    min_factors: 10  # 最少保留因子数
+    max_factors: 30  # 最多保留因子数
 
 # ==================== 标签配置 ====================
 label:
@@ -110,30 +112,31 @@ strategy:
     max_turnover: 1.0  # 最大换手率
 
 # ==================== 回测配置 ====================
+# ==================== 回测配置 ====================
 backtest:
   # 回测周期
-  train_start_date: "2018-01-01"
-  train_end_date: "2019-12-31"
-  test_start_date: "2020-01-01"
-  test_end_date: "2024-12-31"
+  start_date: "2024-02-01"  # 回测开始日期
+  end_date: "2024-10-31"    # 回测结束日期
+  
+  # 调仓配置
+  rebalance_freq: "20D"  # 调仓频率: 1D, 5D, 20D, 60D
   
   # 滚动训练配置
-  rolling_train:
-    use_rolling: true
-    train_period: 252  # 训练窗口（交易日）
-    retrain_frequency: 60  # 重新训练频率（交易日）
+  use_rolling_train: true
+  train_period: 120  # 训练窗口（交易日）
+  retrain_freq: 20   # 重新训练频率（交易日）
   
   # 资金配置
-  initial_capital: 1000000
+  initial_capital: 1000000  # 初始资金
   
   # 交易成本
-  commission_rate: 0.0003  # 佣金费率
-  min_commission: 5  # 最低佣金
-  slippage: 0.001  # 滑点
+  commission_rate: 0.0003  # 佣金费率（双边）
+  min_commission: 5        # 最低佣金
+  slippage: 0.001          # 滑点
   
   # 基准配置
-  benchmark: "000300.SH"  # 沪深300
-  risk_free_rate: 0.03  # 无风险利率（年化）
+  benchmark: "000300.SH"    # 沪深300
+  risk_free_rate: 0.03      # 无风险利率（年化）
 
 # ==================== 输出配置 ====================
 output:

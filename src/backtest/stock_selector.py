@@ -48,7 +48,15 @@ class StockSelector:
             选中的股票DataFrame（包含stock_code, score, weight列）
         """
         # 预测得分
-        scores = self.model.predict(X)
+        predictions = self.model.predict(X)
+        
+        # 处理多分类和二分类的不同输出格式
+        if len(predictions.shape) == 2:
+            # 多分类：取最高类别的概率作为得分
+            scores = np.max(predictions, axis=1)
+        else:
+            # 二分类：直接使用概率
+            scores = predictions
         
         # 构建结果DataFrame
         results = pd.DataFrame({

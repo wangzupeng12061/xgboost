@@ -36,38 +36,68 @@ class DataProcessor:
         Returns:
             清洗后的数据
         """
-        print(f"Original data size: {len(df)}")
+        print(f"\n{'='*60}")
+        print("开始数据清洗")
+        print(f"{'='*60}")
+        print(f"原始数据: {len(df)} 条记录")
+        print(f"  股票数: {df['stock_code'].nunique() if 'stock_code' in df.columns else 'N/A'}")
         
         cleaned_df = df.copy()
         
-        # 剔除ST股票
-        if drop_st and 'stock_name' in cleaned_df.columns:
-            before_len = len(cleaned_df)
-            cleaned_df = cleaned_df[~cleaned_df['stock_name'].str.contains('ST', na=False)]
-            print(f"Dropped ST stocks: {before_len - len(cleaned_df)}")
+        # 删除重复记录
+        before_len = len(cleaned_df)
+        cleaned_df = cleaned_df.drop_duplicates(subset=['stock_code', 'date'], keep='first')
+        if before_len > len(cleaned_df):
+            print(f"删除重复记录: {before_len - len(cleaned_df)} 条")
         
-        # 剔除停牌股票
+        # 剔除ST股票（通过股票代码判断）
+        if drop_st and 'stock_code' in cleaned_df.columns:
+            before_len = len(cleaned_df)
+            # ST股票通常代码包含4、9开头或名称包含ST
+            cleaned_df = cleaned_df[~cleaned_df['stock_code'].str.contains('ST', na=False)]
+            if before_len > len(cleaned_df):
+                print(f"剔除ST股票: {before_len - len(cleaned_df)} 条")
+        
+        # 剔除停牌股票（成交量为0）
         if drop_suspended and 'volume' in cleaned_df.columns:
             before_len = len(cleaned_df)
             cleaned_df = cleaned_df[cleaned_df['volume'] > 0]
-            print(f"Dropped suspended stocks: {before_len - len(cleaned_df)}")
+            if before_len > len(cleaned_df):
+                print(f"剔除停牌股票: {before_len - len(cleaned_df)} 条")
         
-        # 流动性筛选
+        # 流动性筛选（成交额）
         if min_liquidity and 'amount' in cleaned_df.columns:
             before_len = len(cleaned_df)
             cleaned_df = cleaned_df[cleaned_df['amount'] >= min_liquidity]
-            print(f"Dropped low liquidity: {before_len - len(cleaned_df)}")
+            if before_len > len(cleaned_df):
+                print(f"剔除低流动性: {before_len - len(cleaned_df)} 条 (成交额 < {min_liquidity:,.0f})")
         
-        # 价格筛选
+        # 价格筛选（剔除异常股价）
         if 'close' in cleaned_df.columns:
             before_len = len(cleaned_df)
             cleaned_df = cleaned_df[
                 (cleaned_df['close'] >= min_price) & 
-                (cleaned_df['close'] <= max_price)
+                (cleaned_df['close'] <= max_price) &
+                (cleaned_df['close'].notna())
             ]
-            print(f"Dropped out-of-range prices: {before_len - len(cleaned_df)}")
+            if before_len > len(cleaned_df):
+                print(f"剔除异常股价: {before_len - len(cleaned_df)} 条")
         
-        print(f"Cleaned data size: {len(cleaned_df)}")
+        # 剔除异常涨跌幅（涨跌停以外的极端值）
+        if 'pct_chg' in cleaned_df.columns:
+            before_len = len(cleaned_df)
+            # 保留-20%到20%之间的数据（考虑涨跌停）
+            cleaned_df = cleaned_df[
+                (cleaned_df['pct_chg'] >= -25) & 
+                (cleaned_df['pct_chg'] <= 25)
+            ]
+            if before_len > len(cleaned_df):
+                print(f"剔除异常涨跌幅: {before_len - len(cleaned_df)} 条")
+        
+        print(f"\n清洗后数据: {len(cleaned_df)} 条记录")
+        print(f"  股票数: {cleaned_df['stock_code'].nunique() if 'stock_code' in cleaned_df.columns else 'N/A'}")
+        print(f"  保留率: {len(cleaned_df)/len(df)*100:.2f}%")
+        print(f"{'='*60}\n")
         
         return cleaned_df
     

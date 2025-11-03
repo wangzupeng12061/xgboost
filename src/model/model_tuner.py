@@ -19,7 +19,8 @@ class ModelTuner:
                  task_type: str = 'classification',
                  cv_splits: int = 5,
                  scoring: str = None,
-                 random_state: int = 42):
+                 random_state: int = 42,
+                 num_class: int = None):
         """
         初始化调参器
         
@@ -28,14 +29,23 @@ class ModelTuner:
             cv_splits: 交叉验证折数
             scoring: 评分指标
             random_state: 随机种子
+            num_class: 类别数（用于多分类）
         """
         self.task_type = task_type
         self.cv_splits = cv_splits
         self.random_state = random_state
+        self.num_class = num_class
         
         # 设置默认评分指标
         if scoring is None:
-            self.scoring = 'roc_auc' if task_type == 'classification' else 'neg_mean_squared_error'
+            if task_type == 'classification':
+                # 多分类使用accuracy，二分类使用roc_auc
+                if num_class is not None and num_class > 2:
+                    self.scoring = 'accuracy'
+                else:
+                    self.scoring = 'roc_auc'
+            else:
+                self.scoring = 'neg_mean_squared_error'
         else:
             self.scoring = scoring
         
@@ -45,6 +55,8 @@ class ModelTuner:
         self.cv_results = None
         
         print(f"ModelTuner initialized: task_type={task_type}, cv_splits={cv_splits}")
+        if num_class is not None:
+            print(f"  Multi-class with {num_class} classes, scoring={self.scoring}")
     
     def grid_search(self,
                    X_train: pd.DataFrame,
@@ -273,7 +285,17 @@ class ModelTuner:
     def _create_base_model(self):
         """创建基础模型"""
         if self.task_type == 'classification':
-            return XGBClassifier(random_state=self.random_state, n_jobs=-1)
+            if self.num_class is not None and self.num_class > 2:
+                # 多分类
+                return XGBClassifier(
+                    objective='multi:softprob',
+                    num_class=self.num_class,
+                    random_state=self.random_state,
+                    n_jobs=-1
+                )
+            else:
+                # 二分类
+                return XGBClassifier(random_state=self.random_state, n_jobs=-1)
         else:
             return XGBRegressor(random_state=self.random_state, n_jobs=-1)
     

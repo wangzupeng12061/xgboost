@@ -22,15 +22,18 @@ class XGBoostModel:
     
     def __init__(self, 
                  task_type: str = 'classification',
-                 params: Dict = None):
+                 params: Dict = None,
+                 num_class: int = None):
         """
         初始化XGBoost模型
         
         Args:
             task_type: 任务类型 ('classification' 或 'regression')
             params: 模型参数字典
+            num_class: 分类类别数（多分类时需要指定）
         """
         self.task_type = task_type
+        self.num_class = num_class
         self.model = None
         self.feature_names = None
         self.feature_importance = None
@@ -58,9 +61,21 @@ class XGBoostModel:
         
         # 初始化模型
         if task_type == 'classification':
-            self.params['objective'] = 'binary:logistic'
-            self.params['eval_metric'] = 'auc'
+            # 检测是否为多分类
+            if num_class is not None and num_class > 2:
+                # 多分类
+                self.params['objective'] = 'multi:softprob'
+                self.params['num_class'] = num_class
+                self.params['eval_metric'] = 'mlogloss'
+                print(f"Multi-class classification with {num_class} classes")
+            else:
+                # 二分类
+                self.params['objective'] = 'binary:logistic'
+                self.params['eval_metric'] = 'auc'
+                print(f"Binary classification")
+            
             self.model = XGBClassifier(**self.params)
+            
         elif task_type == 'regression':
             self.params['objective'] = 'reg:squarederror'
             self.params['eval_metric'] = 'rmse'
@@ -153,14 +168,18 @@ class XGBoostModel:
             X: 特征数据
             
         Returns:
-            预测结果
+            预测结果（分类：类别概率或最大概率；回归：预测值）
         """
         if self.model is None:
             raise ValueError("Model not trained yet")
         
         if self.task_type == 'classification':
-            # 返回正类概率
-            return self.model.predict_proba(X)[:, 1]
+            if self.num_class is not None and self.num_class > 2:
+                # 多分类：返回所有类别的概率
+                return self.model.predict_proba(X)
+            else:
+                # 二分类：返回正类概率
+                return self.model.predict_proba(X)[:, 1]
         else:
             return self.model.predict(X)
     
@@ -228,18 +247,40 @@ class XGBoostModel:
         metrics = {}
         
         if self.task_type == 'classification':
-            # 分类指标
-            y_pred_class = (predictions > 0.5).astype(int)
-            
-            metrics['accuracy'] = accuracy_score(y, y_pred_class)
-            metrics['precision'] = precision_score(y, y_pred_class, zero_division=0)
-            metrics['recall'] = recall_score(y, y_pred_class, zero_division=0)
-            metrics['f1'] = f1_score(y, y_pred_class, zero_division=0)
-            
-            try:
-                metrics['auc'] = roc_auc_score(y, predictions)
-            except:
-                metrics['auc'] = np.nan
+            # 获取预测类别
+            if self.num_class is not None and self.num_class > 2:
+                # 多分类
+                y_pred_class = np.argmax(predictions, axis=1)
+                
+                metrics['accuracy'] = accuracy_score(y, y_pred_class)
+                
+                # 对于多分类，使用macro和weighted平均
+                metrics['precision_macro'] = precision_score(y, y_pred_class, average='macro', zero_division=0)
+                metrics['recall_macro'] = recall_score(y, y_pred_class, average='macro', zero_division=0)
+                metrics['f1_macro'] = f1_score(y, y_pred_class, average='macro', zero_division=0)
+                
+                metrics['precision_weighted'] = precision_score(y, y_pred_class, average='weighted', zero_division=0)
+                metrics['recall_weighted'] = recall_score(y, y_pred_class, average='weighted', zero_division=0)
+                metrics['f1_weighted'] = f1_score(y, y_pred_class, average='weighted', zero_division=0)
+                
+                try:
+                    # 多分类AUC (ovr: one-vs-rest)
+                    metrics['auc_ovr'] = roc_auc_score(y, predictions, multi_class='ovr', average='weighted')
+                except:
+                    metrics['auc_ovr'] = np.nan
+            else:
+                # 二分类
+                y_pred_class = (predictions > 0.5).astype(int)
+                
+                metrics['accuracy'] = accuracy_score(y, y_pred_class)
+                metrics['precision'] = precision_score(y, y_pred_class, zero_division=0)
+                metrics['recall'] = recall_score(y, y_pred_class, zero_division=0)
+                metrics['f1'] = f1_score(y, y_pred_class, zero_division=0)
+                
+                try:
+                    metrics['auc'] = roc_auc_score(y, predictions)
+                except:
+                    metrics['auc'] = np.nan
         
         else:
             # 回归指标

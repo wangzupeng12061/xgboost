@@ -5,6 +5,8 @@
 
 import pandas as pd
 import numpy as np
+import matplotlib
+matplotlib.use('Agg')  # 使用非交互式后端
 import matplotlib.pyplot as plt
 import seaborn as sns
 from typing import Optional, Tuple, List
@@ -12,7 +14,7 @@ import warnings
 warnings.filterwarnings('ignore')
 
 # 设置中文字体
-plt.rcParams['font.sans-serif'] = ['SimHei', 'Arial Unicode MS', 'DejaVu Sans']
+plt.rcParams['font.sans-serif'] = ['Songti SC']
 plt.rcParams['axes.unicode_minus'] = False
 
 # 设置样式

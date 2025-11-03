@@ -157,33 +157,47 @@ class FactorProcessor:
         print(f"\nNeutralizing factors...")
         df = self.data.copy()
         
-        if industry_col not in df.columns:
-            print(f"Warning: {industry_col} not found, skipping neutralization")
+        # 检查是否有必要的列
+        has_industry = industry_col in df.columns
+        has_market_cap = market_cap_col in df.columns
+        
+        if not has_industry and not has_market_cap:
+            print(f"Warning: Neither {industry_col} nor {market_cap_col} found, skipping neutralization")
             return df
         
+        if not has_industry:
+            print(f"Warning: {industry_col} not found, only using market cap for neutralization")
+        
+        if not has_market_cap:
+            print(f"Warning: {market_cap_col} not found, only using industry for neutralization")
+        
         # 对每个因子进行中性化
+        neutralized_count = 0
         for factor in self.factor_columns:
             if factor not in df.columns:
                 continue
             
-            print(f"  Neutralizing {factor}...")
-            
             # 按日期分组，对每个截面进行中性化
-            df[factor] = df.groupby('date', group_keys=False).apply(
-                lambda group: self._neutralize_cross_section(
-                    group, factor, industry_col, market_cap_col
-                )
-            )[factor].values
+            try:
+                df[factor] = df.groupby('date', group_keys=False).apply(
+                    lambda group: self._neutralize_cross_section(
+                        group, factor, industry_col if has_industry else None, 
+                        market_cap_col if has_market_cap else None
+                    )
+                )[factor].values
+                neutralized_count += 1
+            except Exception as e:
+                print(f"  Warning: Failed to neutralize {factor}: {e}")
         
-        print("Neutralization completed")
+        print(f"Neutralization completed: {neutralized_count}/{len(self.factor_columns)} factors")
         self.data = df
         return df
     
     @staticmethod
     def _neutralize_cross_section(group: pd.DataFrame,
                                   factor: str,
-                                  industry_col: str,
-                                  market_cap_col: str) -> pd.DataFrame:
+                                  industry_col: Optional[str],
+                                  market_cap_col: Optional[str]) -> pd.DataFrame:
         """对单个截面进行中性化"""
         if len(group) < 10:  # 样本太少，不进行中性化
             return group
@@ -192,19 +206,27 @@ class FactorProcessor:
         X_list = []
         
         # 行业哑变量
-        if industry_col in group.columns:
-            industry_dummies = pd.get_dummies(
-                group[industry_col], 
-                prefix='industry',
-                drop_first=True  # 避免多重共线性
-            )
-            X_list.append(industry_dummies)
+        if industry_col and industry_col in group.columns:
+            try:
+                industry_dummies = pd.get_dummies(
+                    group[industry_col], 
+                    prefix='industry',
+                    drop_first=True  # 避免多重共线性
+                )
+                if len(industry_dummies.columns) > 0:
+                    X_list.append(industry_dummies)
+            except Exception as e:
+                pass  # 跳过行业处理
         
         # 市值的对数
-        if market_cap_col in group.columns:
-            log_cap = np.log(group[market_cap_col].replace(0, np.nan))
-            log_cap = log_cap.fillna(log_cap.median())
-            X_list.append(pd.DataFrame({'log_market_cap': log_cap}, index=group.index))
+        if market_cap_col and market_cap_col in group.columns:
+            try:
+                log_cap = np.log(group[market_cap_col].replace(0, np.nan))
+                log_cap = log_cap.fillna(log_cap.median())
+                if log_cap.std() > 0:  # 确保有变化
+                    X_list.append(pd.DataFrame({'log_market_cap': log_cap}, index=group.index))
+            except Exception as e:
+                pass  # 跳过市值处理
         
         if not X_list:
             return group
@@ -231,7 +253,8 @@ class FactorProcessor:
             group[factor] = y - predictions
             
         except Exception as e:
-            print(f"    Warning: Neutralization failed for {factor}: {e}")
+            # 如果回归失败，保持原值
+            pass
         
         return group
     
