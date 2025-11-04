@@ -1,70 +1,79 @@
 """
-可视化模块
+可视化模块（中文字体完全修复版）
 绘制净值曲线、回撤、因子分析等图表
 """
 
 import pandas as pd
 import numpy as np
-import os
-import platform
-
-# 先加载字体，再设置后端
-import matplotlib.font_manager as fm
-
-# 显式加载中文字体文件
-system = platform.system()
-if system == 'Darwin':
-    font_path = '/System/Library/Fonts/Supplemental/Songti.ttc'
-    if os.path.exists(font_path):
-        try:
-            fm.fontManager.addfont(font_path)
-            print(f"✓ 预加载字体: {font_path}")
-        except:
-            pass
-
-# 现在设置后端
 import matplotlib
 matplotlib.use('Agg')  # 使用非交互式后端
 import matplotlib.pyplot as plt
-from matplotlib import font_manager
+import matplotlib.font_manager as fm
 import seaborn as sns
 from typing import Optional, Tuple, List
 import warnings
+import platform
+import os
 warnings.filterwarnings('ignore')
 
-# 创建中文字体属性对象
-def get_chinese_font():
-    """获取中文字体属性"""
+# 设置中文字体（完全修复版本）
+def setup_chinese_font():
+    """配置中文字体以避免乱码"""
     system = platform.system()
     
-    if system == 'Darwin':
-        font_paths = [
-            '/System/Library/Fonts/Supplemental/Songti.ttc',
-            '/System/Library/Fonts/STHeiti Medium.ttc'
+    # 强制重新加载字体管理器
+    try:
+        fm._load_fontmanager(try_read_cache=False)
+    except:
+        pass
+    
+    if system == 'Darwin':  # macOS
+        # macOS系统字体配置（带完整路径）
+        font_configs = [
+            ('Songti SC', '/System/Library/Fonts/Supplemental/Songti.ttc'),
+            ('Heiti TC', '/System/Library/Fonts/STHeiti Medium.ttc'),
+            ('STSong', None),
+            ('Heiti SC', None),
+            ('Arial Unicode MS', None)
         ]
     elif system == 'Windows':
-        font_paths = [
-            'C:/Windows/Fonts/msyh.ttc',
-            'C:/Windows/Fonts/simhei.ttf'
+        # Windows系统字体
+        font_configs = [
+            ('Microsoft YaHei', 'C:/Windows/Fonts/msyh.ttc'),
+            ('SimHei', 'C:/Windows/Fonts/simhei.ttf'),
+            ('SimSun', 'C:/Windows/Fonts/simsun.ttc'),
+            ('KaiTi', 'C:/Windows/Fonts/simkai.ttf')
         ]
-    else:
-        font_paths = []
+    else:  # Linux
+        # Linux系统字体
+        font_configs = [
+            ('WenQuanYi Micro Hei', None),
+            ('WenQuanYi Zen Hei', None),
+            ('Noto Sans CJK SC', None),
+            ('DejaVu Sans', None)
+        ]
     
-    for path in font_paths:
-        if os.path.exists(path):
-            return font_manager.FontProperties(fname=path)
+    # 显式加载字体文件
+    for font_name, font_path in font_configs:
+        if font_path and os.path.exists(font_path):
+            try:
+                fm.fontManager.addfont(font_path)
+                print(f"✓ 已加载字体文件: {font_path}")
+                break
+            except Exception as e:
+                continue
     
-    # 如果找不到文件，尝试使用字体名称
-    return font_manager.FontProperties(family=['Songti SC', 'SimHei', 'WenQuanYi Micro Hei'])
+    # 设置字体列表
+    fonts = [fc[0] for fc in font_configs]
+    plt.rcParams['font.sans-serif'] = fonts
+    plt.rcParams['axes.unicode_minus'] = False
+    plt.rcParams['font.family'] = 'sans-serif'
+    
+    print(f"✓ 中文字体已配置: {fonts[0]}")
+    return True
 
-# 全局字体属性
-CHINESE_FONT = get_chinese_font()
-
-# 设置全局字体
-plt.rcParams['font.sans-serif'] = ['Songti SC', 'STSong', 'Heiti SC', 'SimHei', 'WenQuanYi Micro Hei']
-plt.rcParams['axes.unicode_minus'] = False
-
-print(f"✓ 中文字体已配置: {plt.rcParams['font.sans-serif'][0]}")
+# 初始化中文字体
+setup_chinese_font()
 
 # 设置样式
 sns.set_style("whitegrid")
@@ -101,10 +110,10 @@ def plot_equity_curve(portfolio_values: pd.Series,
         ax.plot(benchmark_norm.index, benchmark_norm.values,
                 label='基准指数', linewidth=2, color='#3498DB', alpha=0.7)
     
-    ax.set_title(title, fontproperties=CHINESE_FONT, fontsize=16, fontweight='bold', pad=20)
-    ax.set_xlabel('日期', fontproperties=CHINESE_FONT, fontsize=12)
-    ax.set_ylabel('净值（归一化）', fontproperties=CHINESE_FONT, fontsize=12)
-    ax.legend(fontsize=12, loc='upper left', prop=CHINESE_FONT)
+    ax.set_title(title, fontsize=16, fontweight='bold', pad=20)
+    ax.set_xlabel('日期', fontsize=12)
+    ax.set_ylabel('净值（归一化）', fontsize=12)
+    ax.legend(fontsize=12, loc='upper left')
     ax.grid(True, alpha=0.3)
     
     plt.tight_layout()
@@ -151,10 +160,10 @@ def plot_drawdown(portfolio_values: pd.Series,
         ax.fill_between(benchmark_drawdown.index, 0, benchmark_drawdown.values,
                          label='基准指数', color='#3498DB', alpha=0.3)
     
-    ax.set_title(title, fontproperties=CHINESE_FONT, fontsize=16, fontweight='bold', pad=20)
-    ax.set_xlabel('日期', fontproperties=CHINESE_FONT, fontsize=12)
-    ax.set_ylabel('回撤 (%)', fontproperties=CHINESE_FONT, fontsize=12)
-    ax.legend(fontsize=12, loc='lower left', prop=CHINESE_FONT)
+    ax.set_title(title, fontsize=16, fontweight='bold', pad=20)
+    ax.set_xlabel('日期', fontsize=12)
+    ax.set_ylabel('回撤 (%)', fontsize=12)
+    ax.legend(fontsize=12, loc='lower left')
     ax.grid(True, alpha=0.3)
     ax.axhline(y=0, color='black', linestyle='--', linewidth=1, alpha=0.5)
     
@@ -346,11 +355,11 @@ def plot_feature_importance(importance_df: pd.DataFrame,
             color=colors, edgecolor='black', linewidth=0.5)
     
     ax.set_yticks(range(len(top_features)))
-    ax.set_yticklabels(top_features['feature'].values, fontproperties=CHINESE_FONT, fontsize=10)
+    ax.set_yticklabels(top_features['feature'].values, fontsize=10)
     ax.invert_yaxis()
     
-    ax.set_title(f'Top {top_n} 因子重要性', fontproperties=CHINESE_FONT, fontsize=16, fontweight='bold', pad=20)
-    ax.set_xlabel('重要性得分', fontproperties=CHINESE_FONT, fontsize=12)
+    ax.set_title(f'Top {top_n} 因子重要性', fontsize=16, fontweight='bold', pad=20)
+    ax.set_xlabel('重要性得分', fontsize=12)
     ax.grid(True, alpha=0.3, axis='x')
     
     plt.tight_layout()
@@ -472,7 +481,7 @@ def create_dashboard(portfolio_values: pd.Series,
     ax4.axhline(y=0, color='black', linestyle='--', linewidth=1)
     ax4.grid(True, alpha=0.3)
     
-    # 5. 绩效指标
+    # 5. 绩效指标 - 不使用 monospace 字体
     ax5 = fig.add_subplot(gs[2, 1])
     ax5.axis('off')
     
@@ -501,8 +510,9 @@ def create_dashboard(portfolio_values: pd.Series,
                 else:
                     text_lines.append(f"{name}: {value:.4f}")
         
+        # 移除 family='monospace' 以支持中文
         ax5.text(0.1, 0.9, '\n'.join(text_lines),
-                fontsize=12, verticalalignment='top', family='monospace')
+                fontsize=12, verticalalignment='top')
     
     plt.suptitle('策略绩效看板', fontsize=16, fontweight='bold', y=0.995)
     
