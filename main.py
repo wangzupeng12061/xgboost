@@ -587,14 +587,29 @@ def main():
             cache_dir = './cache'
             os.makedirs(cache_dir, exist_ok=True)
             timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
-            cache_path = f"{cache_dir}/factors_{timestamp}.parquet"
-            labeled_data.to_parquet(cache_path, index=False)
-            logger.info(f"  因子数据已保存: {cache_path}")
             
-            # 同时保存一个最新的副本（方便快速加载）
-            latest_cache_path = f"{cache_dir}/factors_latest.parquet"
-            labeled_data.to_parquet(latest_cache_path, index=False)
-            logger.info(f"  最新因子数据: {latest_cache_path}")
+            # 尝试保存为 Parquet 格式（更高效）
+            try:
+                cache_path = f"{cache_dir}/factors_{timestamp}.parquet"
+                labeled_data.to_parquet(cache_path, index=False)
+                logger.info(f"  因子数据已保存: {cache_path}")
+                
+                # 同时保存一个最新的副本（方便快速加载）
+                latest_cache_path = f"{cache_dir}/factors_latest.parquet"
+                labeled_data.to_parquet(latest_cache_path, index=False)
+                logger.info(f"  最新因子数据: {latest_cache_path}")
+            except ImportError as e:
+                # 如果 Parquet 不可用，使用 CSV 格式
+                logger.warning(f"  Parquet 格式不可用: {e}")
+                logger.info("  使用 CSV 格式保存...")
+                cache_path = f"{cache_dir}/factors_{timestamp}.csv"
+                labeled_data.to_csv(cache_path, index=False)
+                logger.info(f"  因子数据已保存: {cache_path}")
+                
+                # 保存最新副本
+                latest_cache_path = f"{cache_dir}/factors_latest.csv"
+                labeled_data.to_csv(latest_cache_path, index=False)
+                logger.info(f"  最新因子数据: {latest_cache_path}")
             
         # ========== 7. 模型训练 ==========
         with LoggerContext(logger, "模型训练"):

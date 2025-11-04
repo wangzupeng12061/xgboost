@@ -146,19 +146,37 @@ def main(model_path: str = None):
             logger.info("查找因子数据缓存...")
             
             cache_dir = './cache'
-            latest_cache = os.path.join(cache_dir, 'factors_latest.parquet')
+            factor_data = None
             
-            # 优先使用最新的缓存
-            if os.path.exists(latest_cache):
+            # 优先尝试 Parquet 格式
+            latest_parquet = os.path.join(cache_dir, 'factors_latest.parquet')
+            latest_csv = os.path.join(cache_dir, 'factors_latest.csv')
+            
+            if os.path.exists(latest_parquet):
                 logger.info(f"  从缓存加载: factors_latest.parquet")
-                factor_data = pd.read_parquet(latest_cache)
+                try:
+                    factor_data = pd.read_parquet(latest_parquet)
+                    logger.info(f"✓ 因子数据加载完成: {len(factor_data)} 条记录")
+                except Exception as e:
+                    logger.warning(f"  Parquet 加载失败: {e}")
+                    factor_data = None
+            
+            # 如果 Parquet 失败，尝试 CSV
+            if factor_data is None and os.path.exists(latest_csv):
+                logger.info(f"  从缓存加载: factors_latest.csv")
+                factor_data = pd.read_csv(latest_csv)
                 logger.info(f"✓ 因子数据加载完成: {len(factor_data)} 条记录")
-            else:
-                # 查找其他缓存文件
+            
+            # 如果都没有，查找其他缓存文件
+            if factor_data is None:
                 cache_files = []
                 if os.path.exists(cache_dir):
-                    cache_files = [f for f in os.listdir(cache_dir) 
-                                 if f.startswith('factors_') and f.endswith('.parquet')]
+                    # 查找 parquet 和 csv 文件
+                    parquet_files = [f for f in os.listdir(cache_dir) 
+                                   if f.startswith('factors_') and f.endswith('.parquet')]
+                    csv_files = [f for f in os.listdir(cache_dir) 
+                               if f.startswith('factors_') and f.endswith('.csv')]
+                    cache_files = parquet_files + csv_files
                 
                 if cache_files:
                     # 使用最新的缓存
@@ -166,7 +184,10 @@ def main(model_path: str = None):
                     cache_path = os.path.join(cache_dir, cache_files[0])
                     logger.info(f"  从缓存加载: {cache_files[0]}")
                     
-                    factor_data = pd.read_parquet(cache_path)
+                    if cache_files[0].endswith('.parquet'):
+                        factor_data = pd.read_parquet(cache_path)
+                    else:
+                        factor_data = pd.read_csv(cache_path)
                     logger.info(f"✓ 因子数据加载完成: {len(factor_data)} 条记录")
                 else:
                     logger.error("未找到因子数据缓存！")
