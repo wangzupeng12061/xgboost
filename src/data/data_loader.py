@@ -621,6 +621,20 @@ class DataLoader:
         Returns:
             行业分类DataFrame，包含stock_code, industry, industry_code等字段
         """
+        # 优先从缓存加载
+        if self.use_cache and self.cache:
+            cached_df = self.cache.get_industry_data()
+            if cached_df is not None:
+                # 如果指定了股票列表，则过滤
+                if stock_codes is not None:
+                    # 确保列名统一
+                    code_col = "stock_code" if "stock_code" in cached_df.columns else "ts_code"
+                    cached_df = cached_df[cached_df[code_col].isin(stock_codes)].copy()
+                    if code_col == "ts_code":
+                        cached_df = cached_df.rename(columns={"ts_code": "stock_code"})
+                return cached_df
+        
+        # 缓存未命中，从API加载
         if self.source == "tushare":
             # 获取股票行业分类（申万行业）
             if stock_codes is None:
@@ -656,6 +670,13 @@ class DataLoader:
 
                 # 添加行业编码（简单映射）
                 df["industry_code"] = df["industry"].factorize()[0]
+                
+                # 保存到缓存（仅当加载全部数据时）
+                if self.use_cache and self.cache and stock_codes is None:
+                    # 还原ts_code列名用于缓存
+                    df_cache = df.copy()
+                    df_cache = df_cache.rename(columns={"stock_code": "ts_code"})
+                    self.cache.save_industry_data(df_cache)
 
             return df
         else:
@@ -750,7 +771,7 @@ class DataLoader:
                 f"Financial indicators not implemented for {self.source}"
             )
 
-    def load_macro_data(self, start_date: str = None, end_date: str = None) -> Dict[str, pd.DataFrame]:
+    def load_macro_data(self, start_date: str = None, end_date: str = None) -> pd.DataFrame:
         """
         加载宏观经济数据 - 优先使用缓存
 
@@ -759,7 +780,7 @@ class DataLoader:
             end_date: 结束日期（可选，用于筛选）
 
         Returns:
-            宏观数据字典 {indicator_name: DataFrame}
+            宏观数据DataFrame，按日期合并后的月度/季度/日度指标（包含'date'列）
         """
         # 如果启用缓存，从缓存加载
         if self.cache is not None:
@@ -771,47 +792,83 @@ class DataLoader:
     
     def _load_macro_from_cache(
         self, start_date: str = None, end_date: str = None
-    ) -> Dict[str, pd.DataFrame]:
-        """从缓存加载宏观数据"""
+    ) -> pd.DataFrame:
+        """从缓存加载宏观数据并合并为单个DataFrame"""
         print("从缓存加载宏观数据...")
         
         # 宏观指标列表
         indicators = ['m1', 'm2', 'cpi', 'ppi', 'gdp', 'pmi']
-        macro_data = {}
+        macro_dfs = []
         success_count = 0
-        
+
         for indicator in indicators:
             try:
                 df = self.cache.get_macro_data(indicator)
-                
+
                 if df is not None and len(df) > 0:
-                    # 如果指定了日期范围，进行筛选（假设有month或date字段）
-                    if start_date or end_date:
-                        # 尝试找到日期字段
-                        date_col = None
-                        for col in ['month', 'date', 'quarter', 'year']:
-                            if col in df.columns:
-                                date_col = col
-                                break
-                        
-                        if date_col:
-                            df[date_col] = pd.to_datetime(df[date_col], format='%Y%m' if date_col == 'month' else None)
-                            if start_date:
-                                df = df[df[date_col] >= pd.to_datetime(start_date)]
-                            if end_date:
-                                df = df[df[date_col] <= pd.to_datetime(end_date)]
-                    
+                    # 规范日期列（兼容month/quarter/date/year等）
+                    date_col = None
+                    for col in ['date', 'month', 'quarter', 'year']:
+                        if col in df.columns:
+                            date_col = col
+                            break
+
+                    if date_col and date_col != 'date':
+                        # month通常为 YYYYMM 格式
+                        try:
+                            if date_col == 'month':
+                                df['date'] = pd.to_datetime(df[date_col].astype(str), format='%Y%m')
+                            else:
+                                df['date'] = pd.to_datetime(df[date_col])
+                        except Exception:
+                            # 最后退回到 generic parsing
+                            df['date'] = pd.to_datetime(df[date_col], errors='coerce')
+
+                    # 如果没有明确的date列， skip 该指标
+                    if 'date' not in df.columns:
+                        print(f"  ✗ {indicator}: 无法识别日期列，跳过")
+                        continue
+
+                    # 只保留date及其他指标列
+                    cols_keep = [c for c in df.columns if c != date_col]
+                    # ensure date is first
+                    df = df[['date'] + [c for c in cols_keep if c != 'date']]
+
+                    # 如果用户指定了筛选范围，应用筛选
+                    if start_date:
+                        df = df[df['date'] >= pd.to_datetime(start_date)]
+                    if end_date:
+                        df = df[df['date'] <= pd.to_datetime(end_date)]
+
                     if len(df) > 0:
-                        macro_data[indicator] = df
+                        macro_dfs.append(df)
                         success_count += 1
                         print(f"  ✓ {indicator}: {len(df)} 条记录")
-                    
+
             except Exception as e:
                 print(f"  ✗ {indicator}: 加载失败 ({e})")
                 continue
-        
-        print(f"✓ 加载完成: {success_count}/{len(indicators)} 个宏观指标")
-        return macro_data
+
+        print(f"✓ 缓存加载完成: {success_count}/{len(indicators)} 个宏观指标")
+
+        if not macro_dfs:
+            return pd.DataFrame()
+
+        # 逐步按date合并所有指标（outer join），保持与API分支一致的格式
+        merged = macro_dfs[0].copy()
+        for df in macro_dfs[1:]:
+            merged = pd.merge(merged, df, on='date', how='outer')
+
+        merged = merged.sort_values('date').reset_index(drop=True)
+
+        # 前向填充并扩展到日频，保持与API加载时的行为一致
+        try:
+            merged = merged.set_index('date').resample('D').ffill().reset_index()
+        except Exception:
+            # 如果重采样失败，仍然返回合并后的DataFrame
+            pass
+
+        return merged
         """
         加载宏观经济数据
 
