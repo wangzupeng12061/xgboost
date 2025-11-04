@@ -4,22 +4,22 @@
 data:
   source: "tushare"  # 数据源: tushare, akshare, local
   token: "5bad37d885b8e5bbb4a0bcd546cf67c985f6f3df19095c6be5a67e0e"
-  start_date: "2024-01-01"  # 使用2024年数据，确保快速测试
-  end_date: "2024-10-31"
-  universe: "test"  # 股票池: all, hs300, zz500, test
+  start_date: "2020-01-01"  # 使用全部缓存数据：2020-2025
+  end_date: "2025-11-04"
+  universe: "all"  # 股票池: all=使用所有缓存的1000只股票, hs300, zz500, test
   
   # 离线缓存配置
   cache:
     enabled: true  # 启用本地缓存
     cache_dir: "./data"  # 缓存目录
-    expire_days: 7  # 缓存过期天数（0表示永不过期）
-    auto_update: true  # 数据过期时自动更新
+    expire_days: 0  # 缓存过期天数（0表示永不过期）
+    auto_update: false  # 数据过期时自动更新（使用缓存数据，不自动更新）
   
   # 数据清洗配置
   cleaning:
     drop_st: true  # 剔除ST股票
     drop_suspended: true  # 剔除停牌股票
-    min_liquidity: 100000  # 最小日成交额（元），降低阈值保留更多数据
+    min_liquidity: 1000000  # 最小日成交额（元），降低阈值保留更多数据
     min_price: 1.0  # 最小股价
     max_price: 1000.0  # 最大股价
 

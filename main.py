@@ -95,15 +95,27 @@ def main():
             universe = config['data'].get('universe', 'all')
             if universe == 'hs300':
                 # TODO: 获取沪深300成分股
-                stock_codes = stock_list['stock_code'].tolist()[:50]
+                stock_codes = stock_list['ts_code'].tolist()[:50]
                 logger.info(f"  股票池: 沪深300 (暂用前50只)")
             elif universe == 'zz500':
-                stock_codes = stock_list['stock_code'].tolist()[:100]
+                stock_codes = stock_list['ts_code'].tolist()[:100]
                 logger.info(f"  股票池: 中证500 (前100只)")
-            else:
-                # 测试股票池，使用30只确保稳定运行
-                stock_codes = stock_list['stock_code'].tolist()[:30]
+            elif universe == 'test':
+                # 测试股票池，使用30只确保快速测试
+                stock_codes = stock_list['ts_code'].tolist()[:30]
                 logger.info(f"  股票池: 测试池 (前30只)")
+            else:
+                # 使用所有缓存的股票（从缓存目录获取）
+                from pathlib import Path
+                cache_dir = Path('./data/stock_daily')
+                if cache_dir.exists():
+                    stock_files = list(cache_dir.glob('*.csv'))
+                    stock_codes = [f.stem for f in stock_files]
+                    logger.info(f"  股票池: 全部缓存股票 ({len(stock_codes)} 只)")
+                else:
+                    # 如果缓存目录不存在，使用前100只
+                    stock_codes = stock_list['ts_code'].tolist()[:100]
+                    logger.info(f"  股票池: 默认股票池 (前100只)")
             
             # 加载日线数据
             logger.info("加载日线数据...")

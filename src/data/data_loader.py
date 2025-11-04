@@ -1,6 +1,7 @@
 """
 数据加载模块
 支持从Tushare、AKShare等数据源加载股票数据
+优先使用本地缓存数据
 """
 
 import pandas as pd
@@ -8,6 +9,7 @@ import numpy as np
 from typing import List, Optional, Dict
 from datetime import datetime, timedelta
 import warnings
+from pathlib import Path
 
 warnings.filterwarnings("ignore")
 
@@ -27,19 +29,39 @@ except ImportError:
     AKSHARE_AVAILABLE = False
     print("Warning: akshare not installed")
 
+# 导入缓存模块
+try:
+    from .data_cache import DataCache
+    CACHE_AVAILABLE = True
+except ImportError:
+    CACHE_AVAILABLE = False
+    print("Warning: DataCache not available")
+
 
 class DataLoader:
-    """数据加载类"""
+    """数据加载类 - 优先使用本地缓存"""
 
-    def __init__(self, source: str = "tushare", token: str = None):
+    def __init__(self, source: str = "tushare", token: str = None, use_cache: bool = True, cache_dir: str = "./data"):
         """
         初始化数据加载器
 
         Args:
             source: 数据源 ('tushare', 'akshare', 'local')
             token: tushare token
+            use_cache: 是否使用缓存 (默认True)
+            cache_dir: 缓存目录 (默认'./data')
         """
         self.source = source
+        self.use_cache = use_cache
+        
+        # 初始化缓存
+        if use_cache and CACHE_AVAILABLE:
+            self.cache = DataCache(cache_dir=cache_dir, expire_days=0)
+            print(f"✓ DataCache enabled: {cache_dir}")
+        else:
+            self.cache = None
+            if use_cache:
+                print("Warning: DataCache not available, falling back to direct API access")
 
         if source == "tushare":
             if not TUSHARE_AVAILABLE:
@@ -58,7 +80,7 @@ class DataLoader:
 
     def load_stock_list(self, date: str = None, market: str = "all") -> pd.DataFrame:
         """
-        加载股票列表
+        加载股票列表 - 优先使用缓存
 
         Args:
             date: 交易日期 (YYYYMMDD)
@@ -67,6 +89,17 @@ class DataLoader:
         Returns:
             股票列表DataFrame
         """
+        # 尝试从缓存获取股票基本信息
+        if self.cache is not None:
+            try:
+                stock_basic = self.cache.get_stock_basic()
+                if stock_basic is not None:
+                    print(f"✓ 从缓存加载股票列表: {len(stock_basic)} 只股票")
+                    return stock_basic
+            except Exception as e:
+                print(f"从缓存加载股票列表失败: {e}")
+        
+        # 缓存不可用，从API加载
         if self.source == "tushare":
             return self._load_stock_list_tushare(date, market)
         elif self.source == "akshare":
@@ -137,7 +170,7 @@ class DataLoader:
         self, start_date: str, end_date: str, stock_codes: List[str] = None
     ) -> pd.DataFrame:
         """
-        加载日线行情数据
+        加载日线行情数据 - 优先使用缓存
 
         Args:
             start_date: 开始日期 (YYYY-MM-DD)
@@ -147,12 +180,113 @@ class DataLoader:
         Returns:
             日线数据DataFrame
         """
+        # 如果启用缓存，尝试从缓存加载
+        if self.cache is not None:
+            return self._load_daily_from_cache(start_date, end_date, stock_codes)
+        
+        # 缓存不可用，从API加载
         if self.source == "tushare":
             return self._load_daily_tushare(start_date, end_date, stock_codes)
         elif self.source == "akshare":
             return self._load_daily_akshare(start_date, end_date, stock_codes)
         else:
             raise ValueError(f"Unsupported source: {self.source}")
+    
+    def _load_daily_from_cache(
+        self, start_date: str, end_date: str, stock_codes: List[str] = None
+    ) -> pd.DataFrame:
+        """从缓存加载日线数据"""
+        print(f"从缓存加载日线数据: {start_date} 至 {end_date}")
+        
+        # 如果没有指定股票列表，尝试从stock_daily目录获取
+        if stock_codes is None:
+            cache_dir = Path(self.cache.cache_dir) / "stock_daily"
+            if cache_dir.exists():
+                stock_files = list(cache_dir.glob("*.csv"))
+                stock_codes = [f.stem for f in stock_files]
+                print(f"从缓存目录发现 {len(stock_codes)} 只股票")
+            else:
+                print("缓存目录不存在，无法加载数据")
+                return pd.DataFrame()
+        
+        # 逐个加载股票数据
+        dfs = []
+        success_count = 0
+        cache_count = 0
+        api_count = 0
+        
+        for i, ts_code in enumerate(stock_codes, 1):
+            try:
+                # 尝试从缓存加载
+                df = self.cache.get_stock_daily(ts_code)
+                
+                if df is not None and len(df) > 0:
+                    # 筛选日期范围
+                    df['trade_date'] = pd.to_datetime(df['trade_date'], format='%Y%m%d')
+                    start = pd.to_datetime(start_date)
+                    end = pd.to_datetime(end_date)
+                    df = df[(df['trade_date'] >= start) & (df['trade_date'] <= end)]
+                    
+                    if len(df) > 0:
+                        dfs.append(df)
+                        success_count += 1
+                        cache_count += 1
+                else:
+                    # 缓存中没有，从API获取（如果source支持）
+                    if self.source == "tushare":
+                        df_api = self._load_single_stock_tushare(ts_code, start_date, end_date)
+                        if df_api is not None and len(df_api) > 0:
+                            dfs.append(df_api)
+                            success_count += 1
+                            api_count += 1
+                            # 保存到缓存
+                            self.cache.save_stock_daily(ts_code, df_api)
+                
+                # 每100只股票打印进度
+                if i % 100 == 0:
+                    print(f"  进度: {i}/{len(stock_codes)} (缓存: {cache_count}, API: {api_count})")
+                    
+            except Exception as e:
+                print(f"加载 {ts_code} 失败: {e}")
+                continue
+        
+        if len(dfs) == 0:
+            print("没有加载到任何数据")
+            return pd.DataFrame()
+        
+        # 合并所有数据
+        result = pd.concat(dfs, ignore_index=True)
+        
+        # 统一列名：ts_code -> stock_code, trade_date -> date
+        if 'ts_code' in result.columns:
+            result = result.rename(columns={'ts_code': 'stock_code'})
+        if 'trade_date' in result.columns:
+            result['date'] = pd.to_datetime(result['trade_date'], format='%Y%m%d')
+            result = result.drop(columns=['trade_date'])
+        
+        print(f"✓ 加载完成: {success_count}/{len(stock_codes)} 只股票, 共 {len(result)} 条记录")
+        print(f"  数据来源: 缓存 {cache_count}, API {api_count}")
+        
+        return result
+    
+    def _load_single_stock_tushare(self, ts_code: str, start_date: str, end_date: str) -> pd.DataFrame:
+        """从Tushare加载单只股票数据"""
+        try:
+            import time
+            start = start_date.replace("-", "")
+            end = end_date.replace("-", "")
+            
+            df = self.pro.daily(
+                ts_code=ts_code,
+                start_date=start,
+                end_date=end,
+                fields="ts_code,trade_date,open,high,low,close,pre_close,change,pct_chg,vol,amount"
+            )
+            time.sleep(0.5)  # API限流
+            return df
+        except Exception as e:
+            print(f"从API加载 {ts_code} 失败: {e}")
+            return None
 
     def _load_daily_tushare(
         self, start_date: str, end_date: str, stock_codes: List[str] = None
@@ -296,77 +430,80 @@ class DataLoader:
             return pd.DataFrame()
 
     def load_financial_data(
-        self, start_date: str, end_date: str, report_type: str = "all"
-    ) -> pd.DataFrame:
+        self, stock_codes: List[str] = None, start_date: str = None, end_date: str = None
+    ) -> Dict[str, pd.DataFrame]:
         """
-        加载财务数据
+        加载财务数据 - 优先使用缓存
 
         Args:
-            start_date: 开始日期
-            end_date: 结束日期
-            report_type: 报表类型 ('balance', 'income', 'cashflow', 'all')
+            stock_codes: 股票代码列表（None表示全部）
+            start_date: 开始日期（用于筛选，可选）
+            end_date: 结束日期（用于筛选，可选）
 
         Returns:
-            财务数据DataFrame
+            财务数据字典 {ts_code: DataFrame}
         """
-        if self.source == "tushare":
-            return self._load_financial_tushare(start_date, end_date, report_type)
-        else:
-            raise NotImplementedError(
-                f"Financial data not implemented for {self.source}"
-            )
-
-    def _load_financial_tushare(
-        self, start_date: str, end_date: str, report_type: str = "all"
-    ) -> pd.DataFrame:
-        """从Tushare加载财务数据"""
-        start_date = start_date.replace("-", "")
-        end_date = end_date.replace("-", "")
-
-        dfs = []
-
-        # 资产负债表
-        if report_type in ["balance", "all"]:
-            balance = self.pro.balancesheet(
-                period=start_date,
-                fields="ts_code,end_date,total_assets,total_liab,total_equity",
-            )
-            dfs.append(balance)
-
-        # 利润表
-        if report_type in ["income", "all"]:
-            income = self.pro.income(
-                period=start_date,
-                fields="ts_code,end_date,revenue,operate_profit,total_profit,n_income",
-            )
-            dfs.append(income)
-
-        # 现金流量表
-        if report_type in ["cashflow", "all"]:
-            cashflow = self.pro.cashflow(
-                period=start_date,
-                fields="ts_code,end_date,n_cashflow_act,n_cashflow_inv,n_cash_flows",
-            )
-            dfs.append(cashflow)
-
-        # 合并数据
-        if dfs:
-            df = dfs[0]
-            for i in range(1, len(dfs)):
-                df = pd.merge(df, dfs[i], on=["ts_code", "end_date"], how="outer")
-
-            df = df.rename(columns={"ts_code": "stock_code", "end_date": "report_date"})
-            df["report_date"] = pd.to_datetime(df["report_date"])
-
-            return df
-        else:
-            return pd.DataFrame()
+        # 如果启用缓存，从缓存加载
+        if self.cache is not None:
+            return self._load_financial_from_cache(stock_codes, start_date, end_date)
+        
+        # 缓存不可用，返回空字典
+        print("Warning: 缓存不可用，无法加载财务数据")
+        return {}
+    
+    def _load_financial_from_cache(
+        self, stock_codes: List[str] = None, start_date: str = None, end_date: str = None
+    ) -> Dict[str, pd.DataFrame]:
+        """从缓存加载财务数据"""
+        print("从缓存加载财务数据...")
+        
+        # 如果没有指定股票列表，尝试从financial目录获取
+        if stock_codes is None:
+            cache_dir = Path(self.cache.cache_dir) / "financial"
+            if cache_dir.exists():
+                stock_files = list(cache_dir.glob("*.csv"))
+                stock_codes = [f.stem for f in stock_files]
+                print(f"从缓存目录发现 {len(stock_codes)} 只股票的财务数据")
+            else:
+                print("财务数据缓存目录不存在")
+                return {}
+        
+        # 逐个加载
+        financial_data = {}
+        success_count = 0
+        
+        for i, ts_code in enumerate(stock_codes, 1):
+            try:
+                df = self.cache.get_financial_data(ts_code)
+                
+                if df is not None and len(df) > 0:
+                    # 如果指定了日期范围，进行筛选
+                    if start_date or end_date:
+                        df['end_date'] = pd.to_datetime(df['end_date'], format='%Y%m%d')
+                        if start_date:
+                            df = df[df['end_date'] >= pd.to_datetime(start_date)]
+                        if end_date:
+                            df = df[df['end_date'] <= pd.to_datetime(end_date)]
+                    
+                    if len(df) > 0:
+                        financial_data[ts_code] = df
+                        success_count += 1
+                
+                # 每100只股票打印进度
+                if i % 100 == 0:
+                    print(f"  进度: {i}/{len(stock_codes)} (成功: {success_count})")
+                    
+            except Exception as e:
+                continue
+        
+        print(f"✓ 加载完成: {success_count}/{len(stock_codes)} 只股票的财务数据")
+        return financial_data
 
     def load_index_data(
         self, index_code: str, start_date: str, end_date: str
     ) -> pd.DataFrame:
         """
-        加载指数数据
+        加载指数数据 - 优先使用缓存
 
         Args:
             index_code: 指数代码（如 '000300.SH' 沪深300）
@@ -376,6 +513,27 @@ class DataLoader:
         Returns:
             指数数据DataFrame
         """
+        # 如果启用缓存，尝试从缓存加载
+        if self.cache is not None:
+            try:
+                df = self.cache.get_index_daily(index_code)
+                if df is not None and len(df) > 0:
+                    # 筛选日期范围
+                    df['trade_date'] = pd.to_datetime(df['trade_date'], format='%Y%m%d')
+                    start = pd.to_datetime(start_date)
+                    end = pd.to_datetime(end_date)
+                    df = df[(df['trade_date'] >= start) & (df['trade_date'] <= end)]
+                    
+                    if len(df) > 0:
+                        print(f"✓ 从缓存加载指数数据: {index_code}, {len(df)} 条记录")
+                        df = df.rename(columns={"trade_date": "date", "pct_chg": "return"})
+                        df["date"] = pd.to_datetime(df["date"])
+                        df = df.sort_values("date")
+                        return df
+            except Exception as e:
+                print(f"从缓存加载指数数据失败: {e}")
+        
+        # 缓存不可用或加载失败，从API加载
         if self.source == "tushare":
             return self._load_index_tushare(index_code, start_date, end_date)
         elif self.source == "akshare":
@@ -592,7 +750,68 @@ class DataLoader:
                 f"Financial indicators not implemented for {self.source}"
             )
 
-    def load_macro_data(self, start_date: str, end_date: str) -> pd.DataFrame:
+    def load_macro_data(self, start_date: str = None, end_date: str = None) -> Dict[str, pd.DataFrame]:
+        """
+        加载宏观经济数据 - 优先使用缓存
+
+        Args:
+            start_date: 开始日期（可选，用于筛选）
+            end_date: 结束日期（可选，用于筛选）
+
+        Returns:
+            宏观数据字典 {indicator_name: DataFrame}
+        """
+        # 如果启用缓存，从缓存加载
+        if self.cache is not None:
+            return self._load_macro_from_cache(start_date, end_date)
+        
+        # 缓存不可用，返回空字典
+        print("Warning: 缓存不可用，无法加载宏观数据")
+        return {}
+    
+    def _load_macro_from_cache(
+        self, start_date: str = None, end_date: str = None
+    ) -> Dict[str, pd.DataFrame]:
+        """从缓存加载宏观数据"""
+        print("从缓存加载宏观数据...")
+        
+        # 宏观指标列表
+        indicators = ['m1', 'm2', 'cpi', 'ppi', 'gdp', 'pmi']
+        macro_data = {}
+        success_count = 0
+        
+        for indicator in indicators:
+            try:
+                df = self.cache.get_macro_data(indicator)
+                
+                if df is not None and len(df) > 0:
+                    # 如果指定了日期范围，进行筛选（假设有month或date字段）
+                    if start_date or end_date:
+                        # 尝试找到日期字段
+                        date_col = None
+                        for col in ['month', 'date', 'quarter', 'year']:
+                            if col in df.columns:
+                                date_col = col
+                                break
+                        
+                        if date_col:
+                            df[date_col] = pd.to_datetime(df[date_col], format='%Y%m' if date_col == 'month' else None)
+                            if start_date:
+                                df = df[df[date_col] >= pd.to_datetime(start_date)]
+                            if end_date:
+                                df = df[df[date_col] <= pd.to_datetime(end_date)]
+                    
+                    if len(df) > 0:
+                        macro_data[indicator] = df
+                        success_count += 1
+                        print(f"  ✓ {indicator}: {len(df)} 条记录")
+                    
+            except Exception as e:
+                print(f"  ✗ {indicator}: 加载失败 ({e})")
+                continue
+        
+        print(f"✓ 加载完成: {success_count}/{len(indicators)} 个宏观指标")
+        return macro_data
         """
         加载宏观经济数据
 
