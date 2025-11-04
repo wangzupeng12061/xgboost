@@ -6,7 +6,6 @@
 import pandas as pd
 import numpy as np
 import matplotlib
-matplotlib.use('Agg')  # 使用非交互式后端
 import matplotlib.pyplot as plt
 import matplotlib.font_manager as fm
 import seaborn as sns
@@ -78,7 +77,7 @@ setup_chinese_font()
 # 设置样式
 sns.set_style("whitegrid")
 plt.rcParams['figure.autolayout'] = True
-
+matplotlib.use('Agg')  # 使用非交互式后端
 
 def plot_equity_curve(portfolio_values: pd.Series,
                      benchmark_values: pd.Series = None,
