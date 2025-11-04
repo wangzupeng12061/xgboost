@@ -14,7 +14,8 @@ import warnings
 warnings.filterwarnings('ignore')
 
 # 设置中文字体
-plt.rcParams['font.sans-serif'] = ['Songti SC']
+plt.rcParams['font.sans-serif'] = ['Heiti TC'] # Mac支持中文
+#plt.rcParams['font.sans-serif'] = ['SimHei'] #windows支持中文
 plt.rcParams['axes.unicode_minus'] = False
 
 # 设置样式
