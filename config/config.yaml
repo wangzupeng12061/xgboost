@@ -8,6 +8,13 @@ data:
   end_date: "2024-10-31"
   universe: "test"  # 股票池: all, hs300, zz500, test
   
+  # 离线缓存配置
+  cache:
+    enabled: true  # 启用本地缓存
+    cache_dir: "./data"  # 缓存目录
+    expire_days: 7  # 缓存过期天数（0表示永不过期）
+    auto_update: true  # 数据过期时自动更新
+  
   # 数据清洗配置
   cleaning:
     drop_st: true  # 剔除ST股票

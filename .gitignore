@@ -8,7 +8,11 @@ __pycache__/
 
 # C extensions
 *.so
+
+# Project specific - Results and Data
 results/
+data/
+!data/README.md
 # Distribution / packaging
 .Python
 build/
