@@ -96,9 +96,13 @@ def plot_equity_curve(portfolio_values: pd.Series,
             label='策略组合', linewidth=2, color='#E74C3C')
     
     # 绘制基准曲线
-    if benchmark_values is not None:
+    if benchmark_values is not None and len(benchmark_values) > 0:
+        # 使用线性插值对齐基准数据到组合日期，避免横跳
         benchmark_norm = benchmark_values / benchmark_values.iloc[0] * 100
-        ax.plot(benchmark_norm.index, benchmark_norm.values,
+        benchmark_aligned = benchmark_norm.reindex(
+            portfolio_norm.index.union(benchmark_norm.index)
+        ).interpolate(method='time').reindex(portfolio_norm.index)
+        ax.plot(benchmark_aligned.index, benchmark_aligned.values,
                 label='基准指数', linewidth=2, color='#3498DB', alpha=0.7)
     
     ax.set_title(title, fontproperties=CHINESE_FONT, fontsize=16, fontweight='bold', pad=20)
@@ -143,10 +147,14 @@ def plot_drawdown(portfolio_values: pd.Series,
                      label='策略组合', color='#E74C3C', alpha=0.5)
     
     # 绘制基准回撤
-    if benchmark_values is not None:
+    if benchmark_values is not None and len(benchmark_values) > 0:
+        # 使用插值对齐基准数据
         benchmark_norm = benchmark_values / benchmark_values.iloc[0]
-        benchmark_cummax = benchmark_norm.expanding().max()
-        benchmark_drawdown = (benchmark_norm - benchmark_cummax) / benchmark_cummax * 100
+        benchmark_aligned = benchmark_norm.reindex(
+            portfolio_norm.index.union(benchmark_norm.index)
+        ).interpolate(method='time').reindex(portfolio_norm.index)
+        benchmark_cummax = benchmark_aligned.expanding().max()
+        benchmark_drawdown = (benchmark_aligned - benchmark_cummax) / benchmark_cummax * 100
         
         ax.fill_between(benchmark_drawdown.index, 0, benchmark_drawdown.values,
                          label='基准指数', color='#3498DB', alpha=0.3)
@@ -188,15 +196,19 @@ def plot_returns_distribution(portfolio_values: pd.Series,
     ax1.hist(portfolio_returns, bins=50, alpha=0.7, label='策略组合',
              color='#E74C3C', edgecolor='black')
     
-    if benchmark_values is not None:
-        benchmark_returns = benchmark_values.pct_change().dropna() * 100
+    if benchmark_values is not None and len(benchmark_values) > 0:
+        # 使用插值对齐基准数据
+        benchmark_aligned = benchmark_values.reindex(
+            portfolio_values.index.union(benchmark_values.index)
+        ).interpolate(method='time').reindex(portfolio_values.index)
+        benchmark_returns = benchmark_aligned.pct_change().dropna() * 100
         ax1.hist(benchmark_returns, bins=50, alpha=0.5, label='基准指数',
                  color='#3498DB', edgecolor='black')
     
-    ax1.set_title('日收益率分布', fontsize=14, fontweight='bold')
-    ax1.set_xlabel('收益率 (%)', fontsize=12)
-    ax1.set_ylabel('频数', fontsize=12)
-    ax1.legend(fontsize=10)
+    ax1.set_title('日收益率分布', fontproperties=CHINESE_FONT, fontsize=14, fontweight='bold')
+    ax1.set_xlabel('收益率 (%)', fontproperties=CHINESE_FONT, fontsize=12)
+    ax1.set_ylabel('频数', fontproperties=CHINESE_FONT, fontsize=12)
+    ax1.legend(fontsize=10, prop=CHINESE_FONT)
     ax1.grid(True, alpha=0.3)
     ax1.axvline(x=0, color='black', linestyle='--', linewidth=1, alpha=0.5)
     
@@ -204,9 +216,11 @@ def plot_returns_distribution(portfolio_values: pd.Series,
     data_to_plot = [portfolio_returns]
     labels = ['策略组合']
     
-    if benchmark_values is not None:
-        data_to_plot.append(benchmark_returns)
-        labels.append('基准指数')
+    if benchmark_values is not None and len(benchmark_values) > 0:
+        # 使用已经对齐的benchmark_returns（如果存在）
+        if 'benchmark_returns' in locals():
+            data_to_plot.append(benchmark_returns)
+            labels.append('基准指数')
     
     bp = ax2.boxplot(data_to_plot, labels=labels, patch_artist=True)
     
@@ -216,8 +230,10 @@ def plot_returns_distribution(portfolio_values: pd.Series,
         patch.set_facecolor(color)
         patch.set_alpha(0.7)
     
-    ax2.set_title('收益率箱线图', fontsize=14, fontweight='bold')
-    ax2.set_ylabel('收益率 (%)', fontsize=12)
+    ax2.set_title('收益率箱线图', fontproperties=CHINESE_FONT, fontsize=14, fontweight='bold')
+    ax2.set_xticks(range(1, len(labels) + 1))
+    ax2.set_xticklabels(labels, fontproperties=CHINESE_FONT, fontsize=10)
+    ax2.set_ylabel('收益率 (%)', fontproperties=CHINESE_FONT, fontsize=12)
     ax2.grid(True, alpha=0.3)
     ax2.axhline(y=0, color='black', linestyle='--', linewidth=1, alpha=0.5)
     
@@ -252,16 +268,16 @@ def plot_rolling_metrics(portfolio_values: pd.Series,
     axes[0].plot(rolling_return.index, rolling_return.values,
                  linewidth=2, color='#E74C3C')
     axes[0].axhline(y=0, color='black', linestyle='--', linewidth=1, alpha=0.5)
-    axes[0].set_title(f'{window}日滚动收益率', fontsize=14, fontweight='bold')
-    axes[0].set_ylabel('收益率 (%)', fontsize=12)
+    axes[0].set_title(f'{window}日滚动收益率', fontproperties=CHINESE_FONT, fontsize=14, fontweight='bold')
+    axes[0].set_ylabel('收益率 (%)', fontproperties=CHINESE_FONT, fontsize=12)
     axes[0].grid(True, alpha=0.3)
     
     # 滚动波动率
     rolling_vol = returns.rolling(window).std() * np.sqrt(252) * 100
     axes[1].plot(rolling_vol.index, rolling_vol.values,
                  linewidth=2, color='#3498DB')
-    axes[1].set_title(f'{window}日滚动波动率（年化）', fontsize=14, fontweight='bold')
-    axes[1].set_ylabel('波动率 (%)', fontsize=12)
+    axes[1].set_title(f'{window}日滚动波动率（年化）', fontproperties=CHINESE_FONT, fontsize=14, fontweight='bold')
+    axes[1].set_ylabel('波动率 (%)', fontproperties=CHINESE_FONT, fontsize=12)
     axes[1].grid(True, alpha=0.3)
     
     # 滚动夏普比率
@@ -269,9 +285,9 @@ def plot_rolling_metrics(portfolio_values: pd.Series,
     axes[2].plot(rolling_sharpe.index, rolling_sharpe.values,
                  linewidth=2, color='#27AE60')
     axes[2].axhline(y=0, color='black', linestyle='--', linewidth=1, alpha=0.5)
-    axes[2].set_title(f'{window}日滚动夏普比率', fontsize=14, fontweight='bold')
-    axes[2].set_xlabel('日期', fontsize=12)
-    axes[2].set_ylabel('夏普比率', fontsize=12)
+    axes[2].set_title(f'{window}日滚动夏普比率', fontproperties=CHINESE_FONT, fontsize=14, fontweight='bold')
+    axes[2].set_xlabel('日期', fontproperties=CHINESE_FONT, fontsize=12)
+    axes[2].set_ylabel('夏普比率', fontproperties=CHINESE_FONT, fontsize=12)
     axes[2].grid(True, alpha=0.3)
     
     plt.tight_layout()
@@ -308,12 +324,24 @@ def plot_monthly_returns(portfolio_values: pd.Series,
     # 绘制热力图
     fig, ax = plt.subplots(figsize=figsize)
     
-    sns.heatmap(pivot_table, annot=True, fmt='.2f', cmap='RdYlGn',
-                center=0, ax=ax, cbar_kws={'label': '收益率 (%)'})
+    heatmap = sns.heatmap(pivot_table, annot=True, fmt='.2f', cmap='RdYlGn',
+                          center=0, ax=ax, cbar_kws={'label': '收益率 (%)'})
+    if heatmap.collections:
+        cbar = heatmap.collections[0].colorbar
+        cbar.ax.set_ylabel('收益率 (%)', fontproperties=CHINESE_FONT, fontsize=12)
+        for tick in cbar.ax.get_yticklabels():
+            tick.set_fontproperties(CHINESE_FONT)
+        cbar.ax.tick_params(labelsize=10)
     
-    ax.set_title('月度收益率热力图', fontsize=16, fontweight='bold', pad=20)
-    ax.set_xlabel('月份', fontsize=12)
-    ax.set_ylabel('年份', fontsize=12)
+    ax.set_title('月度收益率热力图', fontproperties=CHINESE_FONT, fontsize=16, fontweight='bold', pad=20)
+    ax.set_xlabel('月份', fontproperties=CHINESE_FONT, fontsize=12)
+    ax.set_ylabel('年份', fontproperties=CHINESE_FONT, fontsize=12)
+    for tick in ax.get_xticklabels():
+        tick.set_fontproperties(CHINESE_FONT)
+        tick.set_fontsize(10)
+    for tick in ax.get_yticklabels():
+        tick.set_fontproperties(CHINESE_FONT)
+        tick.set_fontsize(10)
     
     plt.tight_layout()
     
@@ -386,10 +414,10 @@ def plot_ic_analysis(ic_df: pd.DataFrame,
                      label=factor, alpha=0.7, linewidth=1.5)
     
     ax1.axhline(y=0, color='black', linestyle='--', linewidth=1, alpha=0.5)
-    ax1.set_title('因子IC时序图', fontsize=14, fontweight='bold')
-    ax1.set_xlabel('日期', fontsize=12)
-    ax1.set_ylabel('IC值', fontsize=12)
-    ax1.legend(fontsize=10, loc='best', ncol=2)
+    ax1.set_title('因子IC时序图', fontproperties=CHINESE_FONT, fontsize=14, fontweight='bold')
+    ax1.set_xlabel('日期', fontproperties=CHINESE_FONT, fontsize=12)
+    ax1.set_ylabel('IC值', fontproperties=CHINESE_FONT, fontsize=12)
+    ax1.legend(fontsize=10, loc='best', ncol=2, prop=CHINESE_FONT)
     ax1.grid(True, alpha=0.3)
     
     # IC累计图
@@ -400,10 +428,10 @@ def plot_ic_analysis(ic_df: pd.DataFrame,
             ax2.plot(pd.to_datetime(ic_df['date']), ic_cumsum[factor],
                      label=factor, alpha=0.7, linewidth=1.5)
     
-    ax2.set_title('因子IC累计图', fontsize=14, fontweight='bold')
-    ax2.set_xlabel('日期', fontsize=12)
-    ax2.set_ylabel('累计IC', fontsize=12)
-    ax2.legend(fontsize=10, loc='best', ncol=2)
+    ax2.set_title('因子IC累计图', fontproperties=CHINESE_FONT, fontsize=14, fontweight='bold')
+    ax2.set_xlabel('日期', fontproperties=CHINESE_FONT, fontsize=12)
+    ax2.set_ylabel('累计IC', fontproperties=CHINESE_FONT, fontsize=12)
+    ax2.legend(fontsize=10, loc='best', ncol=2, prop=CHINESE_FONT)
     ax2.grid(True, alpha=0.3)
     
     plt.tight_layout()
@@ -436,13 +464,17 @@ def create_dashboard(portfolio_values: pd.Series,
     ax1.plot(portfolio_norm.index, portfolio_norm.values,
              label='策略组合', linewidth=2, color='#E74C3C')
     
-    if benchmark_values is not None:
+    if benchmark_values is not None and len(benchmark_values) > 0:
+        # 使用插值对齐基准数据
         benchmark_norm = benchmark_values / benchmark_values.iloc[0] * 100
-        ax1.plot(benchmark_norm.index, benchmark_norm.values,
+        benchmark_aligned = benchmark_norm.reindex(
+            portfolio_norm.index.union(benchmark_norm.index)
+        ).interpolate(method='time').reindex(portfolio_norm.index)
+        ax1.plot(benchmark_aligned.index, benchmark_aligned.values,
                  label='基准指数', linewidth=2, color='#3498DB', alpha=0.7)
     
-    ax1.set_title('净值曲线', fontsize=14, fontweight='bold')
-    ax1.legend()
+    ax1.set_title('净值曲线', fontproperties=CHINESE_FONT, fontsize=14, fontweight='bold')
+    ax1.legend(prop=CHINESE_FONT)
     ax1.grid(True, alpha=0.3)
     
     # 2. 回撤
@@ -452,14 +484,14 @@ def create_dashboard(portfolio_values: pd.Series,
     portfolio_drawdown = (portfolio_norm - portfolio_cummax) / portfolio_cummax * 100
     ax2.fill_between(portfolio_drawdown.index, 0, portfolio_drawdown.values,
                       color='#E74C3C', alpha=0.5)
-    ax2.set_title('回撤', fontsize=14, fontweight='bold')
+    ax2.set_title('回撤', fontproperties=CHINESE_FONT, fontsize=14, fontweight='bold')
     ax2.grid(True, alpha=0.3)
     
     # 3. 收益率分布
     ax3 = fig.add_subplot(gs[1, 1])
     returns = portfolio_values.pct_change().dropna() * 100
     ax3.hist(returns, bins=30, color='#3498DB', alpha=0.7, edgecolor='black')
-    ax3.set_title('日收益率分布', fontsize=14, fontweight='bold')
+    ax3.set_title('日收益率分布', fontproperties=CHINESE_FONT, fontsize=14, fontweight='bold')
     ax3.axvline(x=0, color='red', linestyle='--', linewidth=1)
     ax3.grid(True, alpha=0.3)
     
@@ -468,7 +500,7 @@ def create_dashboard(portfolio_values: pd.Series,
     monthly = portfolio_values.resample('M').last().pct_change() * 100
     colors = ['green' if x > 0 else 'red' for x in monthly.values]
     ax4.bar(range(len(monthly)), monthly.values, color=colors, alpha=0.7)
-    ax4.set_title('月度收益', fontsize=14, fontweight='bold')
+    ax4.set_title('月度收益', fontproperties=CHINESE_FONT, fontsize=14, fontweight='bold')
     ax4.axhline(y=0, color='black', linestyle='--', linewidth=1)
     ax4.grid(True, alpha=0.3)
     
@@ -502,9 +534,9 @@ def create_dashboard(portfolio_values: pd.Series,
                     text_lines.append(f"{name}: {value:.4f}")
         
         ax5.text(0.1, 0.9, '\n'.join(text_lines),
-                fontsize=12, verticalalignment='top', family='monospace')
+                fontsize=12, verticalalignment='top', fontproperties=CHINESE_FONT)
     
-    plt.suptitle('策略绩效看板', fontsize=16, fontweight='bold', y=0.995)
+    plt.suptitle('策略绩效看板', fontproperties=CHINESE_FONT, fontsize=16, fontweight='bold', y=0.995)
     
     if save_path:
         plt.savefig(save_path, dpi=300, bbox_inches='tight')

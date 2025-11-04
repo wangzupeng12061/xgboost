@@ -104,9 +104,16 @@ def plot_equity_curve(portfolio_values: pd.Series,
             label='策略组合', linewidth=2, color='#E74C3C')
     
     # 绘制基准曲线
-    if benchmark_values is not None:
+    if benchmark_values is not None and len(benchmark_values) > 0:
+        # 只使用共同的日期范围，避免外推
         benchmark_norm = benchmark_values / benchmark_values.iloc[0] * 100
-        ax.plot(benchmark_norm.index, benchmark_norm.values,
+        # 使用线性插值到组合的日期上，使曲线更平滑
+        # reindex with linear interpolation
+        benchmark_aligned = benchmark_norm.reindex(
+            portfolio_norm.index.union(benchmark_norm.index)
+        ).interpolate(method='time').reindex(portfolio_norm.index)
+        
+        ax.plot(benchmark_aligned.index, benchmark_aligned.values,
                 label='基准指数', linewidth=2, color='#3498DB', alpha=0.7)
     
     ax.set_title(title, fontsize=16, fontweight='bold', pad=20)
@@ -151,10 +158,19 @@ def plot_drawdown(portfolio_values: pd.Series,
                      label='策略组合', color='#E74C3C', alpha=0.5)
     
     # 绘制基准回撤
-    if benchmark_values is not None:
+    if benchmark_values is not None and len(benchmark_values) > 0:
+        # 使用插值对齐到组合日期
         benchmark_norm = benchmark_values / benchmark_values.iloc[0]
-        benchmark_cummax = benchmark_norm.expanding().max()
-        benchmark_drawdown = (benchmark_norm - benchmark_cummax) / benchmark_cummax * 100
+        # 插值到组合的日期
+        benchmark_aligned = pd.Series(
+            benchmark_norm.values, 
+            index=benchmark_norm.index
+        ).reindex(
+            portfolio_norm.index.union(benchmark_norm.index)
+        ).interpolate(method='time').reindex(portfolio_norm.index)
+        
+        benchmark_cummax = benchmark_aligned.expanding().max()
+        benchmark_drawdown = (benchmark_aligned - benchmark_cummax) / benchmark_cummax * 100
         
         ax.fill_between(benchmark_drawdown.index, 0, benchmark_drawdown.values,
                          label='基准指数', color='#3498DB', alpha=0.3)
@@ -196,8 +212,12 @@ def plot_returns_distribution(portfolio_values: pd.Series,
     ax1.hist(portfolio_returns, bins=50, alpha=0.7, label='策略组合',
              color='#E74C3C', edgecolor='black')
     
-    if benchmark_values is not None:
-        benchmark_returns = benchmark_values.pct_change().dropna() * 100
+    if benchmark_values is not None and len(benchmark_values) > 0:
+        # 插值对齐基准数据到组合日期
+        benchmark_aligned = benchmark_values.reindex(
+            portfolio_values.index.union(benchmark_values.index)
+        ).interpolate(method='time').reindex(portfolio_values.index)
+        benchmark_returns = benchmark_aligned.pct_change().dropna() * 100
         ax1.hist(benchmark_returns, bins=50, alpha=0.5, label='基准指数',
                  color='#3498DB', edgecolor='black')
     
@@ -212,9 +232,11 @@ def plot_returns_distribution(portfolio_values: pd.Series,
     data_to_plot = [portfolio_returns]
     labels = ['策略组合']
     
-    if benchmark_values is not None:
-        data_to_plot.append(benchmark_returns)
-        labels.append('基准指数')
+    if benchmark_values is not None and len(benchmark_values) > 0:
+        # 使用已经对齐的benchmark_returns（如果存在）
+        if 'benchmark_returns' in locals():
+            data_to_plot.append(benchmark_returns)
+            labels.append('基准指数')
     
     bp = ax2.boxplot(data_to_plot, labels=labels, patch_artist=True)
     
@@ -444,9 +466,13 @@ def create_dashboard(portfolio_values: pd.Series,
     ax1.plot(portfolio_norm.index, portfolio_norm.values,
              label='策略组合', linewidth=2, color='#E74C3C')
     
-    if benchmark_values is not None:
+    if benchmark_values is not None and len(benchmark_values) > 0:
+        # 使用插值对齐基准数据
         benchmark_norm = benchmark_values / benchmark_values.iloc[0] * 100
-        ax1.plot(benchmark_norm.index, benchmark_norm.values,
+        benchmark_aligned = benchmark_norm.reindex(
+            portfolio_norm.index.union(benchmark_norm.index)
+        ).interpolate(method='time').reindex(portfolio_norm.index)
+        ax1.plot(benchmark_aligned.index, benchmark_aligned.values,
                  label='基准指数', linewidth=2, color='#3498DB', alpha=0.7)
     
     ax1.set_title('净值曲线', fontsize=14, fontweight='bold')

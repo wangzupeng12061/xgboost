@@ -582,6 +582,20 @@ def main():
             if 'label' in labeled_data.columns:
                 logger.info(f"  标签分布: {labeled_data['label'].value_counts().to_dict()}")
             
+            # 保存因子数据（用于后续回测）
+            logger.info("保存因子数据到缓存...")
+            cache_dir = './cache'
+            os.makedirs(cache_dir, exist_ok=True)
+            timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+            cache_path = f"{cache_dir}/factors_{timestamp}.parquet"
+            labeled_data.to_parquet(cache_path, index=False)
+            logger.info(f"  因子数据已保存: {cache_path}")
+            
+            # 同时保存一个最新的副本（方便快速加载）
+            latest_cache_path = f"{cache_dir}/factors_latest.parquet"
+            labeled_data.to_parquet(latest_cache_path, index=False)
+            logger.info(f"  最新因子数据: {latest_cache_path}")
+            
         # ========== 7. 模型训练 ==========
         with LoggerContext(logger, "模型训练"):
             # 准备训练数据
@@ -781,8 +795,10 @@ def main():
                                 initial_close = benchmark_data.loc[first_date, 'close']
                                 benchmark_values = benchmark_data['close'] / initial_close * config['backtest']['initial_capital']
                                 
-                                # 只保留组合存在的日期
-                                benchmark_values = benchmark_values.reindex(portfolio_values.index).fillna(method='ffill')
+                                # 只保留交易日数据，不进行填充
+                                # 这样可以避免非交易日填充导致的曲线横跳
+                                common_dates = portfolio_values.index.intersection(benchmark_values.index)
+                                benchmark_values = benchmark_values[common_dates]
                             
                             logger.info(f"  基准数据: {benchmark_code}, {len(benchmark_data)} 条")
                     except Exception as e:
