@@ -788,6 +788,11 @@ def main():
                     index=pd.to_datetime(daily_values['date'])
                 )
                 
+                # 去除重复的日期索引（如果有）
+                if portfolio_values.index.duplicated().any():
+                    logger.warning(f"  发现 {portfolio_values.index.duplicated().sum()} 个重复日期，保留最后一个")
+                    portfolio_values = portfolio_values[~portfolio_values.index.duplicated(keep='last')]
+                
                 # 加载基准数据（可选）
                 benchmark_values = None
                 if config['backtest'].get('benchmark'):
@@ -803,6 +808,11 @@ def main():
                             # 对齐日期
                             benchmark_data = benchmark_data.set_index('date')
                             benchmark_data.index = pd.to_datetime(benchmark_data.index)
+                            
+                            # 去除重复的日期索引
+                            if benchmark_data.index.duplicated().any():
+                                logger.warning(f"  基准数据有 {benchmark_data.index.duplicated().sum()} 个重复日期，保留最后一个")
+                                benchmark_data = benchmark_data[~benchmark_data.index.duplicated(keep='last')]
                             
                             # 归一化基准净值
                             first_date = portfolio_values.index[0]
@@ -865,10 +875,17 @@ def main():
                             index=pd.to_datetime(daily_values['date'])
                         )
                         
+                        # 去除重复的日期索引
+                        if portfolio_values.index.duplicated().any():
+                            portfolio_values = portfolio_values[~portfolio_values.index.duplicated(keep='last')]
+                        
                         # 如果有基准数据，使用之前加载的
                         benchmark_values_plot = None
                         if 'benchmark_values' in locals() and benchmark_values is not None:
                             benchmark_values_plot = benchmark_values
+                            # 确保基准数据也没有重复
+                            if benchmark_values_plot.index.duplicated().any():
+                                benchmark_values_plot = benchmark_values_plot[~benchmark_values_plot.index.duplicated(keep='last')]
                         
                         timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
                         figure_path = config['output']['figure_path']
